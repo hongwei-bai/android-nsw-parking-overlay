@@ -21,5 +21,8 @@ data class CarParkHistoryRecord(
     val queryWeekday: String,
     val queryTime: String,
     val queriedAtEpochMillis: Long,
-    val spaceLeft: Int
+    val spaceLeft: Int,
+    val isPublicHolidayNsw: Boolean = false,
+    val isFirstWeekOfMonth: Boolean = false,
+    val isLastWeekOfMonth: Boolean = false
 )

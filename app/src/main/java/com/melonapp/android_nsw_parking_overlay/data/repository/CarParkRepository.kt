@@ -4,6 +4,7 @@ import com.melonapp.android_nsw_parking_overlay.data.api.TfNswApiService
 import com.melonapp.android_nsw_parking_overlay.data.database.CarParkHistoryDao
 import com.melonapp.android_nsw_parking_overlay.data.database.CarParkHistoryRecord
 import com.melonapp.android_nsw_parking_overlay.data.model.CarParkResponse
+import com.melonapp.android_nsw_parking_overlay.util.NswCalendarUtils
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 import java.time.ZoneId
@@ -67,6 +68,7 @@ class CarParkRepository(
 
     private fun CarParkResponse.toHistoryRecord(fallbackName: String): CarParkHistoryRecord {
         val now = Instant.now().atZone(ZoneId.systemDefault())
+        val date = now.toLocalDate()
         return CarParkHistoryRecord(
             carParkId = facilityId,
             carParkName = facilityName.orEmpty().ifBlank { fallbackName },
@@ -74,7 +76,10 @@ class CarParkRepository(
             queryWeekday = weekdayFormatter.format(now),
             queryTime = timeFormatter.format(now),
             queriedAtEpochMillis = now.toInstant().toEpochMilli(),
-            spaceLeft = availableSpots
+            spaceLeft = availableSpots,
+            isPublicHolidayNsw = NswCalendarUtils.isNswPublicHoliday(date),
+            isFirstWeekOfMonth = NswCalendarUtils.isFirstWeekOfMonth(date),
+            isLastWeekOfMonth = NswCalendarUtils.isLastWeekOfMonth(date)
         )
     }
 }
