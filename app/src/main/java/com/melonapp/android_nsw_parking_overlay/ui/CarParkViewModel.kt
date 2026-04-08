@@ -24,12 +24,17 @@ import java.time.Instant
 
 enum class HistoryTimespanPreset(
     val label: String,
-    val duration: Duration
+    val duration: Duration,
+    val isLongSpan: Boolean
 ) {
-    TWO_HOURS("2h", Duration.ofHours(2)),
-    ONE_DAY("1d", Duration.ofDays(1)),
-    ONE_WEEK("1w", Duration.ofDays(7)),
-    ONE_MONTH("1m", Duration.ofDays(30))
+    FIFTEEN_MINUTES("15m", Duration.ofMinutes(15), false),
+    ONE_HOUR("1h", Duration.ofHours(1), false),
+    FOUR_HOURS("4h", Duration.ofHours(4), false),
+    ONE_DAY("1d", Duration.ofDays(1), false),
+    ONE_WEEK("1w", Duration.ofDays(7), true),
+    ONE_MONTH("1m", Duration.ofDays(30), true),
+    ONE_QUARTER("1q", Duration.ofDays(91), true),
+    ONE_YEAR("1y", Duration.ofDays(365), true)
 }
 
 data class SelectedCarPark(
@@ -62,7 +67,7 @@ data class CarParkUiState(
     val historyCount: Int = 0,
     val historyStatusMessage: String? = null,
     val isHistoryOperationInProgress: Boolean = false,
-    val historyTimespanPreset: HistoryTimespanPreset = HistoryTimespanPreset.TWO_HOURS,
+    val historyTimespanPreset: HistoryTimespanPreset = HistoryTimespanPreset.ONE_HOUR,
     val historySeries: List<HistorySeries> = emptyList(),
 
     val overlayRefreshIntervalMs: Long = 30_000L,
