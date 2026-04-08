@@ -91,6 +91,31 @@ fun HistoryScreen(
             HistoryTimespanPreset.ONE_YEAR
         )
     }
+    val windowLabel = remember(
+        uiState.historyTimespanPreset,
+        uiState.historyWindowEndEpochMillis
+    ) {
+        formatHistoryWindowLabel(
+            preset = uiState.historyTimespanPreset,
+            windowEndEpochMillis = uiState.historyWindowEndEpochMillis
+        )
+    }
+    val canShiftBackward = remember(
+        uiState.historyMinEpochMillis,
+        uiState.historyWindowEndEpochMillis,
+        uiState.historyTimespanPreset
+    ) {
+        val minEpoch = uiState.historyMinEpochMillis ?: return@remember false
+        val windowStart = uiState.historyWindowEndEpochMillis - uiState.historyTimespanPreset.duration.toMillis()
+        windowStart > minEpoch
+    }
+    val canShiftForward = remember(
+        uiState.historyMaxEpochMillis,
+        uiState.historyWindowEndEpochMillis
+    ) {
+        val maxEpoch = uiState.historyMaxEpochMillis ?: return@remember false
+        uiState.historyWindowEndEpochMillis < maxEpoch
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -127,6 +152,16 @@ fun HistoryScreen(
                 presets = longPresets,
                 selectedPreset = uiState.historyTimespanPreset,
                 onPresetSelected = viewModel::setHistoryTimespanPreset
+            )
+        }
+
+        item {
+            WindowShiftRow(
+                label = windowLabel,
+                canShiftBackward = canShiftBackward,
+                canShiftForward = canShiftForward,
+                onShiftBackward = { viewModel.shiftHistoryWindow(direction = -1) },
+                onShiftForward = { viewModel.shiftHistoryWindow(direction = 1) }
             )
         }
 
@@ -172,6 +207,7 @@ fun HistoryScreen(
                             LongSpanHistoryChart(
                                 series = uiState.historySeries,
                                 timespanPreset = uiState.historyTimespanPreset,
+                                windowEndEpochMillis = uiState.historyWindowEndEpochMillis,
                                 xZoom = xZoom,
                                 yZoom = yZoom,
                                 xPan = xPan,
@@ -181,6 +217,7 @@ fun HistoryScreen(
                             ShortSpanHistoryChart(
                                 series = uiState.historySeries,
                                 timespanPreset = uiState.historyTimespanPreset,
+                                windowEndEpochMillis = uiState.historyWindowEndEpochMillis,
                                 xZoom = xZoom,
                                 yZoom = yZoom,
                                 xPan = xPan,
@@ -279,6 +316,33 @@ private fun PresetRow(
 }
 
 @Composable
+private fun WindowShiftRow(
+    label: String,
+    canShiftBackward: Boolean,
+    canShiftForward: Boolean,
+    onShiftBackward: () -> Unit,
+    onShiftForward: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedButton(onClick = onShiftBackward, enabled = canShiftBackward) {
+            Text("<")
+        }
+        Text(
+            label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleMedium
+        )
+        OutlinedButton(onClick = onShiftForward, enabled = canShiftForward) {
+            Text(">")
+        }
+    }
+}
+
+@Composable
 private fun ZoomControls(
     label: String,
     zoom: Float,
@@ -333,6 +397,7 @@ private fun LegendRow(series: List<HistorySeries>) {
 private fun ShortSpanHistoryChart(
     series: List<HistorySeries>,
     timespanPreset: HistoryTimespanPreset,
+    windowEndEpochMillis: Long,
     xZoom: Float,
     yZoom: Float,
     xPan: Float,
@@ -348,8 +413,7 @@ private fun ShortSpanHistoryChart(
         }
     }
     val allPoints = remember(series) { series.flatMap { it.points } }
-    val nowMillis = Instant.now().toEpochMilli()
-    val baseXEnd = maxOf(nowMillis, allPoints.maxOfOrNull { it.epochMillis } ?: nowMillis)
+    val baseXEnd = windowEndEpochMillis
     val baseXStart = baseXEnd - timespanPreset.duration.toMillis()
     val visibleXRange = rememberVisibleLongRange(baseXStart, baseXEnd, xZoom, xPan)
     val yRange = rememberShortYRange(allPoints, yZoom, yPan)
@@ -402,6 +466,7 @@ private fun ShortSpanHistoryChart(
 private fun LongSpanHistoryChart(
     series: List<HistorySeries>,
     timespanPreset: HistoryTimespanPreset,
+    windowEndEpochMillis: Long,
     xZoom: Float,
     yZoom: Float,
     xPan: Float,
@@ -410,11 +475,14 @@ private fun LongSpanHistoryChart(
     val zoneId = remember { ZoneId.systemDefault() }
     val dailySeries = remember(series) {
         series.associateWith { historySeries ->
-            historySeries.toMorningUnavailablePoints(zoneId)
+            historySeries.toMorningUnavailablePoints(
+                zoneId = zoneId,
+                useSmartInference = historySeries.smartUnavailableDetectionEnabled
+            )
         }
     }
     val allPoints = remember(dailySeries) { dailySeries.values.flatten() }
-    val baseXEnd = allPoints.maxOfOrNull { it.epochMillis } ?: Instant.now().toEpochMilli()
+    val baseXEnd = windowEndEpochMillis
     val baseXStart = baseXEnd - timespanPreset.duration.toMillis()
     val visibleXRange = rememberVisibleLongRange(baseXStart, baseXEnd, xZoom, xPan)
     val yRange = rememberMorningYRange(allPoints, yZoom, yPan)
@@ -759,24 +827,17 @@ private fun visibleFloatRange(
     )
 }
 
-private fun HistorySeries.toMorningUnavailablePoints(zoneId: ZoneId): List<MorningUnavailablePoint> {
-    return points
-        .groupBy { Instant.ofEpochMilli(it.epochMillis).atZone(zoneId).toLocalDate() }
-        .mapNotNull { (date, dailyPoints) ->
-            inferMorningUnavailablePoint(date, dailyPoints.sortedBy { it.epochMillis }, zoneId)
-        }
-        .sortedBy { it.epochMillis }
-}
-
 private fun inferMorningUnavailablePoint(
     date: LocalDate,
     points: List<HistoryPoint>,
-    zoneId: ZoneId
+    zoneId: ZoneId,
+    useSmartInference: Boolean
 ): MorningUnavailablePoint? {
     val zeroPoint = points.firstOrNull { it.spacesLeft <= 0 }
     if (zeroPoint != null) {
         return zeroPoint.toMorningUnavailablePoint(date, zoneId, inferred = false)
     }
+    if (!useSmartInference) return null
 
     val lowThreshold = 2
     points.forEachIndexed { index, point ->
@@ -810,6 +871,45 @@ private fun inferMorningUnavailablePoint(
         candidate.toMorningUnavailablePoint(date, zoneId, inferred = true)
     } else {
         null
+    }
+}
+
+private fun HistorySeries.toMorningUnavailablePoints(
+    zoneId: ZoneId,
+    useSmartInference: Boolean
+): List<MorningUnavailablePoint> {
+    return points
+        .groupBy { Instant.ofEpochMilli(it.epochMillis).atZone(zoneId).toLocalDate() }
+        .mapNotNull { (date, dailyPoints) ->
+            inferMorningUnavailablePoint(
+                date = date,
+                points = dailyPoints.sortedBy { it.epochMillis },
+                zoneId = zoneId,
+                useSmartInference = useSmartInference
+            )
+        }
+        .sortedBy { it.epochMillis }
+}
+
+private fun formatHistoryWindowLabel(
+    preset: HistoryTimespanPreset,
+    windowEndEpochMillis: Long
+): String {
+    val zoneId = ZoneId.systemDefault()
+    val end = Instant.ofEpochMilli(windowEndEpochMillis).atZone(zoneId)
+    val start = end.minus(preset.duration)
+    return if (preset.isLongSpan) {
+        val formatter = DateTimeFormatter.ofPattern("d MMM")
+        "${formatter.format(start)} - ${formatter.format(end)}"
+    } else {
+        val formatter = DateTimeFormatter.ofPattern("H:mm")
+        val startDay = DateTimeFormatter.ofPattern("d MMM").format(start)
+        val endDay = DateTimeFormatter.ofPattern("d MMM").format(end)
+        if (start.toLocalDate() == end.toLocalDate()) {
+            "${formatter.format(start)} - ${formatter.format(end)}"
+        } else {
+            "$startDay ${formatter.format(start)} - $endDay ${formatter.format(end)}"
+        }
     }
 }
 
