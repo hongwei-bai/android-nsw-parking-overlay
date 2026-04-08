@@ -29,6 +29,7 @@ import com.melonapp.android_nsw_parking_overlay.MainActivity
 import com.melonapp.android_nsw_parking_overlay.R
 import com.melonapp.android_nsw_parking_overlay.data.DataStoreManager
 import com.melonapp.android_nsw_parking_overlay.data.api.RetrofitClient
+import com.melonapp.android_nsw_parking_overlay.data.database.AppDatabase
 import com.melonapp.android_nsw_parking_overlay.data.repository.CarParkRepository
 import com.melonapp.android_nsw_parking_overlay.ui.SelectedCarPark
 import kotlinx.coroutines.CoroutineScope
@@ -56,7 +57,12 @@ class OverlayService : Service() {
     private var initialTouchY = 0f
 
     private val gson = Gson()
-    private val repository by lazy { CarParkRepository(RetrofitClient.apiService) }
+    private val repository by lazy {
+        CarParkRepository(
+            apiService = RetrofitClient.apiService,
+            historyDao = AppDatabase.getInstance(applicationContext).carParkHistoryDao()
+        )
+    }
     private val dataStoreManager by lazy { DataStoreManager(applicationContext) }
 
     private var lastGood: List<SelectedCarPark> = emptyList()
@@ -208,7 +214,11 @@ class OverlayService : Service() {
             } else {
                 val updated = withContext(Dispatchers.IO) {
                     selected.map { carPark ->
-                        val details = repository.getCarParkDetails(apiKey, carPark.id)
+                        val details = repository.getCarParkDetailsAndRecord(
+                            apiKey = apiKey,
+                            facilityId = carPark.id,
+                            fallbackName = carPark.name
+                        )
                         carPark.copy(availableSpots = details?.availableSpots ?: 0)
                     }
                 }

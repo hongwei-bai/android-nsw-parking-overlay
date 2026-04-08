@@ -1,44 +1,79 @@
 package com.melonapp.android_nsw_parking_overlay
 
 import android.content.Intent
-import android.os.Bundle
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.DisableSelection
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalTextToolbar
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.TextToolbarStatus
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.melonapp.android_nsw_parking_overlay.data.DataStoreManager
 import com.melonapp.android_nsw_parking_overlay.data.api.RetrofitClient
+import com.melonapp.android_nsw_parking_overlay.data.database.AppDatabase
+import com.melonapp.android_nsw_parking_overlay.data.database.HistoryBackupManager
 import com.melonapp.android_nsw_parking_overlay.data.repository.CarParkRepository
 import com.melonapp.android_nsw_parking_overlay.overlay.OverlayService
+import com.melonapp.android_nsw_parking_overlay.ui.CarParkUiState
 import com.melonapp.android_nsw_parking_overlay.ui.CarParkViewModel
 import com.melonapp.android_nsw_parking_overlay.ui.CarParkViewModelFactory
 import com.melonapp.android_nsw_parking_overlay.ui.theme.AndroidnswparkingoverlayTheme
@@ -47,10 +82,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
-        val repository = CarParkRepository(RetrofitClient.apiService)
+
+        val database = AppDatabase.getInstance(applicationContext)
+        val repository = CarParkRepository(
+            apiService = RetrofitClient.apiService,
+            historyDao = database.carParkHistoryDao()
+        )
         val dataStoreManager = DataStoreManager(applicationContext)
-        val factory = CarParkViewModelFactory(repository, dataStoreManager)
+        val historyBackupManager = HistoryBackupManager(
+            context = applicationContext,
+            historyDao = database.carParkHistoryDao()
+        )
+        val factory = CarParkViewModelFactory(
+            repository = repository,
+            dataStoreManager = dataStoreManager,
+            historyBackupManager = historyBackupManager
+        )
 
         setContent {
             AndroidnswparkingoverlayTheme {
@@ -68,18 +115,18 @@ fun AndroidnswparkingoverlayApp(viewModel: CarParkViewModel) {
 
     NavigationSuiteScaffold(
         navigationSuiteItems = {
-            AppDestinations.entries.forEach {
+            AppDestinations.entries.forEach { destination ->
                 item(
                     icon = {
                         Icon(
-                            painterResource(it.icon),
-                            contentDescription = it.label,
+                            painter = painterResource(destination.icon),
+                            contentDescription = destination.label,
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    label = { Text(it.label) },
-                    selected = it == currentDestination,
-                    onClick = { currentDestination = it }
+                    label = { Text(destination.label) },
+                    selected = destination == currentDestination,
+                    onClick = { currentDestination = destination }
                 )
             }
         }
@@ -97,12 +144,12 @@ fun AndroidnswparkingoverlayApp(viewModel: CarParkViewModel) {
 }
 
 @Composable
-fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_parking_overlay.ui.CarParkUiState) {
+fun HomeScreen(viewModel: CarParkViewModel, uiState: CarParkUiState) {
     var apiKeyInput by remember { mutableStateOf("") }
     var apiKeyVisible by rememberSaveable { mutableStateOf(false) }
-    val context = androidx.compose.ui.platform.LocalContext.current
     var apiKeyDirty by rememberSaveable { mutableStateOf(false) }
     var apiKeyHasFocus by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
 
     LaunchedEffect(uiState.apiKey, apiKeyDirty, apiKeyHasFocus) {
         if (!apiKeyDirty && !apiKeyHasFocus) {
@@ -111,7 +158,7 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_pa
     }
 
     val overlayPermissionLauncher =
-        androidx.activity.compose.rememberLauncherForActivityResult(
+        rememberLauncherForActivityResult(
             contract = ActivityResultContracts.StartActivityForResult()
         ) {
             viewModel.setOverlayPermission(OverlayService.isOverlayPermissionGranted(context))
@@ -132,11 +179,12 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_pa
         }
 
         item {
-            // Prevent copy/cut/paste toolbar from appearing for the API key field.
             val noTextToolbar = remember {
                 object : TextToolbar {
                     override val status: TextToolbarStatus = TextToolbarStatus.Hidden
+
                     override fun hide() = Unit
+
                     override fun showMenu(
                         rect: Rect,
                         onCopyRequested: (() -> Unit)?,
@@ -160,22 +208,28 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_pa
                             .fillMaxWidth()
                             .onFocusChanged { state ->
                                 val nowFocused = state.isFocused
-                                if (nowFocused && !apiKeyHasFocus) {
-                                    // If we're showing masked placeholder, clear it for editing.
-                                    if (!apiKeyDirty && apiKeyInput == "********") apiKeyInput = ""
+                                if (nowFocused && !apiKeyHasFocus && !apiKeyDirty && apiKeyInput == "********") {
+                                    apiKeyInput = ""
                                 }
                                 apiKeyHasFocus = nowFocused
                             },
                         singleLine = true,
-                        visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        visualTransformation = if (apiKeyVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Password,
                             autoCorrectEnabled = false
                         ),
                         trailingIcon = {
                             IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                                val iconRes =
-                                    if (apiKeyVisible) android.R.drawable.ic_menu_view else android.R.drawable.ic_menu_close_clear_cancel
+                                val iconRes = if (apiKeyVisible) {
+                                    android.R.drawable.ic_menu_view
+                                } else {
+                                    android.R.drawable.ic_menu_close_clear_cancel
+                                }
                                 Icon(
                                     painter = painterResource(iconRes),
                                     contentDescription = if (apiKeyVisible) "Hide API Key" else "Show API Key"
@@ -188,7 +242,11 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_pa
 
             Button(
                 onClick = {
-                    val valueToSave = if (!apiKeyDirty && apiKeyInput == "********") uiState.apiKey else apiKeyInput
+                    val valueToSave = if (!apiKeyDirty && apiKeyInput == "********") {
+                        uiState.apiKey
+                    } else {
+                        apiKeyInput
+                    }
                     viewModel.setApiKey(valueToSave)
                     apiKeyDirty = false
                 },
@@ -201,10 +259,17 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_pa
         item {
             Text("Overlay", style = MaterialTheme.typography.headlineSmall)
             Text(
-                if (uiState.hasOverlayPermission) "Permission: granted" else "Permission: not granted",
+                text = if (uiState.hasOverlayPermission) {
+                    "Permission: granted"
+                } else {
+                    "Permission: not granted"
+                },
                 style = MaterialTheme.typography.bodyMedium
             )
-            Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Button(
                     onClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -242,7 +307,7 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_pa
             }
             OutlinedTextField(
                 value = intervalSecInput,
-                onValueChange = { intervalSecInput = it.filter { ch -> ch.isDigit() } },
+                onValueChange = { intervalSecInput = it.filter(Char::isDigit) },
                 label = { Text("Seconds (5 - 600)") },
                 singleLine = true,
                 modifier = Modifier.widthIn(max = 220.dp),
@@ -261,54 +326,56 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_pa
 
         item {
             Text("Overlay colors & thresholds", style = MaterialTheme.typography.titleMedium)
-            var lowInput by remember(uiState.overlayThresholdLow) { mutableStateOf(uiState.overlayThresholdLow.toString()) }
-            var midInput by remember(uiState.overlayThresholdMid) { mutableStateOf(uiState.overlayThresholdMid.toString()) }
+            var lowInput by remember(uiState.overlayThresholdLow) {
+                mutableStateOf(uiState.overlayThresholdLow.toString())
+            }
+            var midInput by remember(uiState.overlayThresholdMid) {
+                mutableStateOf(uiState.overlayThresholdMid.toString())
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = lowInput,
-                    onValueChange = { lowInput = it.filter { ch -> ch.isDigit() } },
-                    label = { Text("Red ≤") },
+                    onValueChange = { lowInput = it.filter(Char::isDigit) },
+                    label = { Text("Red <= threshold") },
                     singleLine = true,
-                    modifier = Modifier.width(110.dp),
+                    modifier = Modifier.width(160.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
                 OutlinedTextField(
                     value = midInput,
-                    onValueChange = { midInput = it.filter { ch -> ch.isDigit() } },
-                    label = { Text("Orange ≤") },
+                    onValueChange = { midInput = it.filter(Char::isDigit) },
+                    label = { Text("Orange <= threshold") },
                     singleLine = true,
-                    modifier = Modifier.width(110.dp),
+                    modifier = Modifier.width(180.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
             }
 
-            var redArgb by remember(uiState.overlayColorRedArgb) { mutableStateOf(uiState.overlayColorRedArgb) }
-            var orangeArgb by remember(uiState.overlayColorOrangeArgb) { mutableStateOf(uiState.overlayColorOrangeArgb) }
-            var greenArgb by remember(uiState.overlayColorGreenArgb) { mutableStateOf(uiState.overlayColorGreenArgb) }
+            var redArgb by remember(uiState.overlayColorRedArgb) {
+                mutableStateOf(uiState.overlayColorRedArgb)
+            }
+            var orangeArgb by remember(uiState.overlayColorOrangeArgb) {
+                mutableStateOf(uiState.overlayColorOrangeArgb)
+            }
+            var greenArgb by remember(uiState.overlayColorGreenArgb) {
+                mutableStateOf(uiState.overlayColorGreenArgb)
+            }
 
-            ColorPickerRow(
-                label = "Red",
-                argb = redArgb,
-                onArgbChange = { redArgb = it }
-            )
-            ColorPickerRow(
-                label = "Orange",
-                argb = orangeArgb,
-                onArgbChange = { orangeArgb = it }
-            )
-            ColorPickerRow(
-                label = "Green",
-                argb = greenArgb,
-                onArgbChange = { greenArgb = it }
-            )
+            ColorPickerRow(label = "Red", argb = redArgb, onArgbChange = { redArgb = it })
+            ColorPickerRow(label = "Orange", argb = orangeArgb, onArgbChange = { orangeArgb = it })
+            ColorPickerRow(label = "Green", argb = greenArgb, onArgbChange = { greenArgb = it })
 
             Button(
                 onClick = {
                     val low = (lowInput.toIntOrNull() ?: 10).coerceAtLeast(0)
                     val mid = (midInput.toIntOrNull() ?: 30).coerceAtLeast(low)
                     viewModel.setOverlayThresholds(low = low, mid = mid)
-                    viewModel.setOverlayColors(redArgb = redArgb, orangeArgb = orangeArgb, greenArgb = greenArgb)
+                    viewModel.setOverlayColors(
+                        redArgb = redArgb,
+                        orangeArgb = orangeArgb,
+                        greenArgb = greenArgb
+                    )
                 },
                 modifier = Modifier.padding(top = 6.dp)
             ) {
@@ -329,8 +396,12 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_pa
                 CircularProgressIndicator(modifier = Modifier.padding(top = 12.dp))
             }
 
-            uiState.errorMessage?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+            uiState.errorMessage?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
         }
 
@@ -406,7 +477,9 @@ private fun ColorPickerDialog(
     var g by remember { mutableStateOf((initialArgb ushr 8) and 0xFF) }
     var b by remember { mutableStateOf(initialArgb and 0xFF) }
 
-    val preview = remember(a, r, g, b) { Color((a shl 24) or (r shl 16) or (g shl 8) or b) }
+    val preview = remember(a, r, g, b) {
+        Color((a shl 24) or (r shl 16) or (g shl 8) or b)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -435,7 +508,9 @@ private fun ColorPickerDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
         }
     )
 }
@@ -457,25 +532,36 @@ private fun ChannelSlider(
 }
 
 @Composable
-fun FavoritesScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_parking_overlay.ui.CarParkUiState) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+fun FavoritesScreen(viewModel: CarParkViewModel, uiState: CarParkUiState) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
         Text("Selected Car Parks", style = MaterialTheme.typography.headlineMedium)
         Text("Max 3 allowed for widget", style = MaterialTheme.typography.bodySmall)
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         Button(onClick = { viewModel.refreshSelectedCarParks() }) {
             Text("Refresh Now")
         }
 
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 16.dp)) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 16.dp)
+        ) {
             items(uiState.selectedCarParks) { carPark ->
                 ListItem(
                     headlineContent = { Text("${carPark.name} (${carPark.abbr})") },
                     supportingContent = { Text("Available: ${carPark.availableSpots}") },
                     trailingContent = {
                         IconButton(onClick = { viewModel.toggleCarParkSelection(carPark.id, carPark.name) }) {
-                            Icon(painterResource(android.R.drawable.ic_menu_delete), contentDescription = "Remove")
+                            Icon(
+                                painter = painterResource(android.R.drawable.ic_menu_delete),
+                                contentDescription = "Remove"
+                            )
                         }
                     }
                 )
@@ -485,16 +571,72 @@ fun FavoritesScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_n
 }
 
 @Composable
-fun ProfileScreen(viewModel: CarParkViewModel, uiState: com.melonapp.android_nsw_parking_overlay.ui.CarParkUiState) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text("P Overlay: NSW Commute Park")
+fun ProfileScreen(viewModel: CarParkViewModel, uiState: CarParkUiState) {
+    val context = LocalContext.current
+    val exportLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            uri?.let { viewModel.exportHistory(context.contentResolver, it) }
+        }
+    val importLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { viewModel.importHistory(context.contentResolver, it) }
+        }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("P Overlay: NSW Commute Park", style = MaterialTheme.typography.headlineMedium)
         Text("Version 0.1")
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("History backup", style = MaterialTheme.typography.titleMedium)
+                Text("Saved records: ${uiState.historyCount}", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Exports are written to a folder you choose, so you can keep a backup outside the app before uninstalling.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { exportLauncher.launch(null) },
+                        enabled = !uiState.isHistoryOperationInProgress
+                    ) {
+                        Text("Export history")
+                    }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json")) },
+                        enabled = !uiState.isHistoryOperationInProgress
+                    ) {
+                        Text("Import history")
+                    }
+                }
+                if (uiState.isHistoryOperationInProgress) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                }
+                uiState.historyStatusMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
     }
 }
 
 enum class AppDestinations(
     val label: String,
-    val icon: Int,
+    val icon: Int
 ) {
     HOME("Setup", R.drawable.ic_home),
     FAVORITES("Selected", R.drawable.ic_favorite),
