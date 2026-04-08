@@ -76,6 +76,7 @@ import com.melonapp.android_nsw_parking_overlay.overlay.OverlayService
 import com.melonapp.android_nsw_parking_overlay.ui.CarParkUiState
 import com.melonapp.android_nsw_parking_overlay.ui.CarParkViewModel
 import com.melonapp.android_nsw_parking_overlay.ui.CarParkViewModelFactory
+import com.melonapp.android_nsw_parking_overlay.ui.HistoryScreen
 import com.melonapp.android_nsw_parking_overlay.ui.theme.AndroidnswparkingoverlayTheme
 
 class MainActivity : ComponentActivity() {
@@ -136,6 +137,7 @@ fun AndroidnswparkingoverlayApp(viewModel: CarParkViewModel) {
                 when (currentDestination) {
                     AppDestinations.HOME -> HomeScreen(viewModel, uiState)
                     AppDestinations.FAVORITES -> FavoritesScreen(viewModel, uiState)
+                    AppDestinations.HISTORY -> HistoryScreen(viewModel, uiState)
                     AppDestinations.PROFILE -> ProfileScreen(viewModel, uiState)
                 }
             }
@@ -673,5 +675,6 @@ enum class AppDestinations(
 ) {
     HOME("Setup", R.drawable.ic_home),
     FAVORITES("Selected", R.drawable.ic_favorite),
+    HISTORY("History", R.drawable.ic_show_chart),
     PROFILE("About", R.drawable.ic_account_box),
 }

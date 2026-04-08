@@ -18,6 +18,19 @@ interface CarParkHistoryDao {
     @Query("SELECT * FROM car_park_history ORDER BY queriedAtEpochMillis DESC")
     suspend fun getAll(): List<CarParkHistoryRecord>
 
+    @Query(
+        """
+        SELECT * FROM car_park_history
+        WHERE carParkId IN (:carParkIds)
+          AND queriedAtEpochMillis >= :fromEpochMillis
+        ORDER BY queriedAtEpochMillis ASC
+        """
+    )
+    fun observeHistoryForCarParks(
+        carParkIds: List<String>,
+        fromEpochMillis: Long
+    ): Flow<List<CarParkHistoryRecord>>
+
     @Query("SELECT COUNT(*) FROM car_park_history")
     fun observeCount(): Flow<Int>
 }

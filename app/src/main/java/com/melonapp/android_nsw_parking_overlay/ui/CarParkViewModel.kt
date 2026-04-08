@@ -5,24 +5,50 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.melonapp.android_nsw_parking_overlay.data.DataStoreManager
+import com.melonapp.android_nsw_parking_overlay.data.database.CarParkHistoryRecord
 import com.melonapp.android_nsw_parking_overlay.data.database.HistoryBackupManager
 import com.melonapp.android_nsw_parking_overlay.data.model.CarParkResponse
 import com.melonapp.android_nsw_parking_overlay.data.repository.CarParkRepository
 import com.melonapp.android_nsw_parking_overlay.util.CarParkUtils
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
+
+enum class HistoryTimespanPreset(
+    val label: String,
+    val duration: Duration
+) {
+    TWO_HOURS("2h", Duration.ofHours(2)),
+    ONE_DAY("1d", Duration.ofDays(1)),
+    ONE_WEEK("1w", Duration.ofDays(7)),
+    ONE_MONTH("1m", Duration.ofDays(30))
+}
 
 data class SelectedCarPark(
     val id: String,
     val name: String,
     val abbr: String,
     val availableSpots: Int = 0
+)
+
+data class HistoryPoint(
+    val epochMillis: Long,
+    val spacesLeft: Int
+)
+
+data class HistorySeries(
+    val carParkId: String,
+    val carParkName: String,
+    val colorArgb: Int,
+    val points: List<HistoryPoint>
 )
 
 data class CarParkUiState(
@@ -36,6 +62,8 @@ data class CarParkUiState(
     val historyCount: Int = 0,
     val historyStatusMessage: String? = null,
     val isHistoryOperationInProgress: Boolean = false,
+    val historyTimespanPreset: HistoryTimespanPreset = HistoryTimespanPreset.TWO_HOURS,
+    val historySeries: List<HistorySeries> = emptyList(),
 
     val overlayRefreshIntervalMs: Long = 30_000L,
     val overlayThresholdLow: Int = 10,
@@ -55,6 +83,7 @@ class CarParkViewModel(
     val uiState: StateFlow<CarParkUiState> = _uiState.asStateFlow()
 
     private val gson = Gson()
+    private var historyJob: Job? = null
 
     init {
         observeDataStore()
@@ -73,8 +102,10 @@ class CarParkViewModel(
                     val type = object : TypeToken<List<SelectedCarPark>>() {}.type
                     val list: List<SelectedCarPark> = gson.fromJson(json, type)
                     _uiState.update { it.copy(selectedCarParks = list) }
+                    observeHistorySeries(list, _uiState.value.historyTimespanPreset)
                 } else {
                     _uiState.update { it.copy(selectedCarParks = emptyList()) }
+                    observeHistorySeries(emptyList(), _uiState.value.historyTimespanPreset)
                 }
             }
         }
@@ -116,6 +147,57 @@ class CarParkViewModel(
                 _uiState.update { it.copy(historyCount = count) }
             }
         }
+    }
+
+    private fun observeHistorySeries(
+        selectedCarParks: List<SelectedCarPark>,
+        preset: HistoryTimespanPreset
+    ) {
+        historyJob?.cancel()
+        if (selectedCarParks.isEmpty()) {
+            _uiState.update { it.copy(historySeries = emptyList()) }
+            return
+        }
+
+        val colorPalette = listOf(
+            0xFF1E88E5.toInt(),
+            0xFFD81B60.toInt(),
+            0xFF43A047.toInt()
+        )
+        val selectedById = selectedCarParks.associateBy { it.id }
+        val fromEpochMillis = Instant.now().minus(preset.duration).toEpochMilli()
+
+        historyJob = viewModelScope.launch {
+            repository.observeHistoryForCarParks(
+                carParkIds = selectedCarParks.map { it.id },
+                fromEpochMillis = fromEpochMillis
+            ).collectLatest { records ->
+                val series = records
+                    .groupBy { it.carParkId }
+                    .mapNotNull { (carParkId, carParkRecords) ->
+                        val selected = selectedById[carParkId] ?: return@mapNotNull null
+                        val sorted = carParkRecords.sortedBy { it.queriedAtEpochMillis }
+                        HistorySeries(
+                            carParkId = carParkId,
+                            carParkName = selected.name,
+                            colorArgb = colorPalette[
+                                selectedCarParks.indexOfFirst { it.id == carParkId }
+                                    .coerceAtLeast(0) % colorPalette.size
+                            ],
+                            points = sorted.map { it.toHistoryPoint() }
+                        )
+                    }
+                    .sortedBy { seriesItem ->
+                        selectedCarParks.indexOfFirst { it.id == seriesItem.carParkId }
+                    }
+                _uiState.update { it.copy(historySeries = series) }
+            }
+        }
+    }
+
+    fun setHistoryTimespanPreset(preset: HistoryTimespanPreset) {
+        _uiState.update { it.copy(historyTimespanPreset = preset) }
+        observeHistorySeries(_uiState.value.selectedCarParks, preset)
     }
 
     fun setApiKey(key: String) {
@@ -252,5 +334,12 @@ class CarParkViewModel(
                 )
             }
         }
+    }
+
+    private fun CarParkHistoryRecord.toHistoryPoint(): HistoryPoint {
+        return HistoryPoint(
+            epochMillis = queriedAtEpochMillis,
+            spacesLeft = spaceLeft
+        )
     }
 }
