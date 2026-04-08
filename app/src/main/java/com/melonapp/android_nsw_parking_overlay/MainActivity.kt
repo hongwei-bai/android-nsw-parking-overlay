@@ -149,7 +149,19 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: CarParkUiState) {
     var apiKeyVisible by rememberSaveable { mutableStateOf(false) }
     var apiKeyDirty by rememberSaveable { mutableStateOf(false) }
     var apiKeyHasFocus by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
+    val normalizedSearchQuery = searchQuery.trim()
+    val filteredFacilities = remember(uiState.facilities, normalizedSearchQuery) {
+        uiState.facilities
+            .toList()
+            .sortedBy { (_, name) -> name.lowercase() }
+            .filter { (id, name) ->
+                normalizedSearchQuery.isBlank() ||
+                    name.contains(normalizedSearchQuery, ignoreCase = true) ||
+                    id.contains(normalizedSearchQuery, ignoreCase = true)
+            }
+    }
 
     LaunchedEffect(uiState.apiKey, apiKeyDirty, apiKeyHasFocus) {
         if (!apiKeyDirty && !apiKeyHasFocus) {
@@ -405,7 +417,28 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: CarParkUiState) {
             }
         }
 
-        items(uiState.facilities.toList()) { (id, name) ->
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Search car parks") },
+                placeholder = { Text("Type name or ID") },
+                singleLine = true,
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                painter = painterResource(android.R.drawable.ic_menu_close_clear_cancel),
+                                contentDescription = "Clear search"
+                            )
+                        }
+                    }
+                }
+            )
+        }
+
+        items(filteredFacilities) { (id, name) ->
             val isSelected = uiState.selectedCarParks.any { it.id == id }
             ListItem(
                 headlineContent = { Text(name) },
