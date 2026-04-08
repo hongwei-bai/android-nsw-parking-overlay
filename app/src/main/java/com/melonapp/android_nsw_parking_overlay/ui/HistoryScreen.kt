@@ -697,7 +697,8 @@ private fun rememberVisibleLongRange(
     pan: Float
 ): VisibleLongRange {
     val baseSpan = (baseEnd - baseStart).coerceAtLeast(1L)
-    val visibleSpan = (baseSpan / zoom).toLong().coerceAtLeast(1L)
+    val effectiveZoom = zoom.coerceAtLeast(1f)
+    val visibleSpan = (baseSpan / effectiveZoom).toLong().coerceAtLeast(1L)
     val maxOffset = (baseSpan - visibleSpan).coerceAtLeast(0L)
     val offset = (maxOffset * pan.coerceIn(0f, 1f)).toLong()
     val start = (baseStart + offset).coerceIn(baseStart, baseEnd - visibleSpan)
@@ -747,7 +748,8 @@ private fun visibleFloatRange(
     pan: Float
 ): VisibleFloatRange {
     val baseSpan = (baseEnd - baseStart).coerceAtLeast(1f)
-    val visibleSpan = (baseSpan / zoom).coerceAtLeast(1f)
+    val effectiveZoom = zoom.coerceAtLeast(1f)
+    val visibleSpan = (baseSpan / effectiveZoom).coerceAtLeast(1f)
     val maxOffset = (baseSpan - visibleSpan).coerceAtLeast(0f)
     val start = baseStart + maxOffset * pan.coerceIn(0f, 1f)
     return VisibleFloatRange(
