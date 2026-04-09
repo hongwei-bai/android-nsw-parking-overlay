@@ -111,7 +111,7 @@ class CarParkViewModel(
             dataStoreManager.selectedCarParks.collectLatest { json ->
                 if (!json.isNullOrBlank()) {
                     val type = object : TypeToken<List<SelectedCarPark>>() {}.type
-                    val list: List<SelectedCarPark> = gson.fromJson(json, type)
+                    val list: List<SelectedCarPark> = gson.fromJson<List<SelectedCarPark>>(json, type)
                         .map { selected ->
                             selected.copy(
                                 smartUnavailableDetectionEnabled =
