@@ -2,6 +2,7 @@ package com.melonapp.android_nsw_parking_overlay.data.repository
 
 import com.melonapp.android_nsw_parking_overlay.data.api.TfNswApiService
 import com.melonapp.android_nsw_parking_overlay.data.database.CarParkHistoryDao
+import com.melonapp.android_nsw_parking_overlay.data.database.CarParkHistoryBounds
 import com.melonapp.android_nsw_parking_overlay.data.database.CarParkHistoryRecord
 import com.melonapp.android_nsw_parking_overlay.data.model.CarParkResponse
 import com.melonapp.android_nsw_parking_overlay.util.NswCalendarUtils
@@ -68,11 +69,17 @@ class CarParkRepository(
 
     fun observeHistoryForCarParks(
         carParkIds: List<String>,
-        fromEpochMillis: Long
+        fromEpochMillis: Long,
+        toEpochMillis: Long
     ): Flow<List<CarParkHistoryRecord>> = historyDao.observeHistoryForCarParks(
         carParkIds = carParkIds,
-        fromEpochMillis = fromEpochMillis
+        fromEpochMillis = fromEpochMillis,
+        toEpochMillis = toEpochMillis
     )
+
+    fun observeHistoryBounds(
+        carParkIds: List<String>
+    ): Flow<CarParkHistoryBounds> = historyDao.observeHistoryBounds(carParkIds)
 
     private fun CarParkResponse.toHistoryRecord(fallbackName: String): CarParkHistoryRecord {
         val now = Instant.now().atZone(ZoneId.systemDefault())

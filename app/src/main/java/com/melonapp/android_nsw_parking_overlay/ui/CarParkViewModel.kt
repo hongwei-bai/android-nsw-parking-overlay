@@ -41,7 +41,8 @@ data class SelectedCarPark(
     val id: String,
     val name: String,
     val abbr: String,
-    val availableSpots: Int = 0
+    val availableSpots: Int = 0,
+    val smartUnavailableDetectionEnabled: Boolean? = true
 )
 
 data class HistoryPoint(
@@ -53,6 +54,7 @@ data class HistorySeries(
     val carParkId: String,
     val carParkName: String,
     val colorArgb: Int,
+    val smartUnavailableDetectionEnabled: Boolean,
     val points: List<HistoryPoint>
 )
 
@@ -69,6 +71,9 @@ data class CarParkUiState(
     val isHistoryOperationInProgress: Boolean = false,
     val historyTimespanPreset: HistoryTimespanPreset = HistoryTimespanPreset.ONE_HOUR,
     val historySeries: List<HistorySeries> = emptyList(),
+    val historyWindowEndEpochMillis: Long = Instant.now().toEpochMilli(),
+    val historyMinEpochMillis: Long? = null,
+    val historyMaxEpochMillis: Long? = null,
 
     val overlayRefreshIntervalMs: Long = 30_000L,
     val overlayThresholdLow: Int = 10,
@@ -89,6 +94,7 @@ class CarParkViewModel(
 
     private val gson = Gson()
     private var historyJob: Job? = null
+    private var historyBoundsJob: Job? = null
 
     init {
         observeDataStore()
@@ -106,11 +112,34 @@ class CarParkViewModel(
                 if (!json.isNullOrBlank()) {
                     val type = object : TypeToken<List<SelectedCarPark>>() {}.type
                     val list: List<SelectedCarPark> = gson.fromJson(json, type)
+                        .map { selected ->
+                            selected.copy(
+                                smartUnavailableDetectionEnabled =
+                                    selected.smartUnavailableDetectionEnabled ?: true
+                            )
+                        }
                     _uiState.update { it.copy(selectedCarParks = list) }
-                    observeHistorySeries(list, _uiState.value.historyTimespanPreset)
+                    observeHistoryBounds(list)
+                    observeHistorySeries(
+                        selectedCarParks = list,
+                        preset = _uiState.value.historyTimespanPreset,
+                        windowEndEpochMillis = _uiState.value.historyWindowEndEpochMillis
+                    )
                 } else {
-                    _uiState.update { it.copy(selectedCarParks = emptyList()) }
-                    observeHistorySeries(emptyList(), _uiState.value.historyTimespanPreset)
+                    _uiState.update {
+                        it.copy(
+                            selectedCarParks = emptyList(),
+                            historyMinEpochMillis = null,
+                            historyMaxEpochMillis = null,
+                            historySeries = emptyList()
+                        )
+                    }
+                    historyBoundsJob?.cancel()
+                    observeHistorySeries(
+                        emptyList(),
+                        _uiState.value.historyTimespanPreset,
+                        _uiState.value.historyWindowEndEpochMillis
+                    )
                 }
             }
         }
@@ -156,7 +185,8 @@ class CarParkViewModel(
 
     private fun observeHistorySeries(
         selectedCarParks: List<SelectedCarPark>,
-        preset: HistoryTimespanPreset
+        preset: HistoryTimespanPreset,
+        windowEndEpochMillis: Long
     ) {
         historyJob?.cancel()
         if (selectedCarParks.isEmpty()) {
@@ -170,12 +200,13 @@ class CarParkViewModel(
             0xFF43A047.toInt()
         )
         val selectedById = selectedCarParks.associateBy { it.id }
-        val fromEpochMillis = Instant.now().minus(preset.duration).toEpochMilli()
+        val fromEpochMillis = windowEndEpochMillis - preset.duration.toMillis()
 
         historyJob = viewModelScope.launch {
             repository.observeHistoryForCarParks(
                 carParkIds = selectedCarParks.map { it.id },
-                fromEpochMillis = fromEpochMillis
+                fromEpochMillis = fromEpochMillis,
+                toEpochMillis = windowEndEpochMillis
             ).collectLatest { records ->
                 val series = records
                     .groupBy { it.carParkId }
@@ -189,6 +220,8 @@ class CarParkViewModel(
                                 selectedCarParks.indexOfFirst { it.id == carParkId }
                                     .coerceAtLeast(0) % colorPalette.size
                             ],
+                            smartUnavailableDetectionEnabled =
+                                selected.smartUnavailableDetectionEnabled != false,
                             points = sorted.map { it.toHistoryPoint() }
                         )
                     }
@@ -200,9 +233,61 @@ class CarParkViewModel(
         }
     }
 
+    private fun observeHistoryBounds(selectedCarParks: List<SelectedCarPark>) {
+        historyBoundsJob?.cancel()
+        if (selectedCarParks.isEmpty()) return
+
+        historyBoundsJob = viewModelScope.launch {
+            repository.observeHistoryBounds(selectedCarParks.map { it.id }).collectLatest { bounds ->
+                val maxEpoch = bounds.maxEpochMillis ?: Instant.now().toEpochMilli()
+                _uiState.update { current ->
+                    val currentEnd = current.historyWindowEndEpochMillis
+                    val nextEnd = when {
+                        current.historyMaxEpochMillis == null -> maxEpoch
+                        currentEnd > maxEpoch -> maxEpoch
+                        else -> currentEnd
+                    }
+                    current.copy(
+                        historyMinEpochMillis = bounds.minEpochMillis,
+                        historyMaxEpochMillis = bounds.maxEpochMillis,
+                        historyWindowEndEpochMillis = nextEnd
+                    )
+                }
+                observeHistorySeries(
+                    selectedCarParks = _uiState.value.selectedCarParks,
+                    preset = _uiState.value.historyTimespanPreset,
+                    windowEndEpochMillis = _uiState.value.historyWindowEndEpochMillis
+                )
+            }
+        }
+    }
+
     fun setHistoryTimespanPreset(preset: HistoryTimespanPreset) {
-        _uiState.update { it.copy(historyTimespanPreset = preset) }
-        observeHistorySeries(_uiState.value.selectedCarParks, preset)
+        val latestEnd = _uiState.value.historyMaxEpochMillis ?: Instant.now().toEpochMilli()
+        _uiState.update {
+            it.copy(
+                historyTimespanPreset = preset,
+                historyWindowEndEpochMillis = latestEnd
+            )
+        }
+        observeHistorySeries(_uiState.value.selectedCarParks, preset, latestEnd)
+    }
+
+    fun shiftHistoryWindow(direction: Int) {
+        val state = _uiState.value
+        val minEpoch = state.historyMinEpochMillis ?: return
+        val maxEpoch = state.historyMaxEpochMillis ?: return
+        val spanMillis = state.historyTimespanPreset.duration.toMillis()
+        val minAllowedEnd = minOf(minEpoch + spanMillis, maxEpoch)
+        val maxAllowedEnd = maxOf(minAllowedEnd, maxEpoch)
+        val shiftedEnd = (state.historyWindowEndEpochMillis + (spanMillis * direction))
+            .coerceIn(minAllowedEnd, maxAllowedEnd)
+        _uiState.update { it.copy(historyWindowEndEpochMillis = shiftedEnd) }
+        observeHistorySeries(
+            selectedCarParks = state.selectedCarParks,
+            preset = state.historyTimespanPreset,
+            windowEndEpochMillis = shiftedEnd
+        )
     }
 
     fun setApiKey(key: String) {
@@ -267,7 +352,8 @@ class CarParkViewModel(
                     SelectedCarPark(
                         id = id,
                         name = name,
-                        abbr = CarParkUtils.getAbbreviation(name)
+                        abbr = CarParkUtils.getAbbreviation(name),
+                        smartUnavailableDetectionEnabled = true
                     )
                 )
             }
@@ -275,6 +361,25 @@ class CarParkViewModel(
         
         viewModelScope.launch {
             dataStoreManager.saveSelectedCarParks(gson.toJson(currentSelected))
+        }
+    }
+
+    fun setSmartUnavailableDetection(id: String, enabled: Boolean) {
+        val updated = _uiState.value.selectedCarParks.map { selected ->
+            if (selected.id == id) {
+                selected.copy(smartUnavailableDetectionEnabled = enabled)
+            } else {
+                selected
+            }
+        }
+        _uiState.update { it.copy(selectedCarParks = updated) }
+        observeHistorySeries(
+            selectedCarParks = updated,
+            preset = _uiState.value.historyTimespanPreset,
+            windowEndEpochMillis = _uiState.value.historyWindowEndEpochMillis
+        )
+        viewModelScope.launch {
+            dataStoreManager.saveSelectedCarParks(gson.toJson(updated))
         }
     }
 

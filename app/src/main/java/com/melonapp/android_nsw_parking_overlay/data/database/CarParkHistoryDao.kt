@@ -6,6 +6,11 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
+data class CarParkHistoryBounds(
+    val minEpochMillis: Long?,
+    val maxEpochMillis: Long?
+)
+
 @Dao
 interface CarParkHistoryDao {
 
@@ -23,13 +28,26 @@ interface CarParkHistoryDao {
         SELECT * FROM car_park_history
         WHERE carParkId IN (:carParkIds)
           AND queriedAtEpochMillis >= :fromEpochMillis
+          AND queriedAtEpochMillis <= :toEpochMillis
         ORDER BY queriedAtEpochMillis ASC
         """
     )
     fun observeHistoryForCarParks(
         carParkIds: List<String>,
-        fromEpochMillis: Long
+        fromEpochMillis: Long,
+        toEpochMillis: Long
     ): Flow<List<CarParkHistoryRecord>>
+
+    @Query(
+        """
+        SELECT
+            MIN(queriedAtEpochMillis) AS minEpochMillis,
+            MAX(queriedAtEpochMillis) AS maxEpochMillis
+        FROM car_park_history
+        WHERE carParkId IN (:carParkIds)
+        """
+    )
+    fun observeHistoryBounds(carParkIds: List<String>): Flow<CarParkHistoryBounds>
 
     @Query("SELECT COUNT(*) FROM car_park_history")
     fun observeCount(): Flow<Int>

@@ -590,7 +590,29 @@ fun FavoritesScreen(viewModel: CarParkViewModel, uiState: CarParkUiState) {
             items(uiState.selectedCarParks) { carPark ->
                 ListItem(
                     headlineContent = { Text("${carPark.name} (${carPark.abbr})") },
-                    supportingContent = { Text("Available: ${carPark.availableSpots}") },
+                    supportingContent = {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Available: ${carPark.availableSpots}")
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = carPark.smartUnavailableDetectionEnabled != false,
+                                    onCheckedChange = {
+                                        viewModel.setSmartUnavailableDetection(
+                                            id = carPark.id,
+                                            enabled = it
+                                        )
+                                    }
+                                )
+                                Text(
+                                    "Use smart unavailable detection",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    },
                     trailingContent = {
                         IconButton(onClick = { viewModel.toggleCarParkSelection(carPark.id, carPark.name) }) {
                             Icon(
