@@ -632,7 +632,7 @@ private fun <T> androidx.compose.ui.graphics.drawscope.DrawScope.drawHistoryLine
 
     val labelPaint = Paint().apply {
         isAntiAlias = true
-        color = textColor.toArgb()
+        this.color = textColor.toArgb()
         textSize = 11.sp.toPx()
         textAlign = Paint.Align.CENTER
     }
