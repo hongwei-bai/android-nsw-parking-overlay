@@ -49,6 +49,20 @@ interface CarParkHistoryDao {
     )
     fun observeHistoryBounds(carParkIds: List<String>): Flow<CarParkHistoryBounds>
 
+    @Query(
+        """
+        SELECT COUNT(*) FROM car_park_history
+        WHERE carParkId IN (:carParkIds)
+          AND queriedAtEpochMillis >= :fromEpochMillis
+          AND queriedAtEpochMillis <= :toEpochMillis
+        """
+    )
+    suspend fun countHistoryInRange(
+        carParkIds: List<String>,
+        fromEpochMillis: Long,
+        toEpochMillis: Long
+    ): Int
+
     @Query("SELECT COUNT(*) FROM car_park_history")
     fun observeCount(): Flow<Int>
 }

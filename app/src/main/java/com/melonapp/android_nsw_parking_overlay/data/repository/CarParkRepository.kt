@@ -81,6 +81,16 @@ class CarParkRepository(
         carParkIds: List<String>
     ): Flow<CarParkHistoryBounds> = historyDao.observeHistoryBounds(carParkIds)
 
+    suspend fun countHistoryInRange(
+        carParkIds: List<String>,
+        fromEpochMillis: Long,
+        toEpochMillis: Long
+    ): Int = historyDao.countHistoryInRange(
+        carParkIds = carParkIds,
+        fromEpochMillis = fromEpochMillis,
+        toEpochMillis = toEpochMillis
+    )
+
     private fun CarParkResponse.toHistoryRecord(fallbackName: String): CarParkHistoryRecord {
         val now = Instant.now().atZone(ZoneId.systemDefault())
         val date = now.toLocalDate()

@@ -46,6 +46,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+import com.melonapp.android_nsw_parking_overlay.util.NswCalendarUtils
 import kotlin.math.absoluteValue
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -899,18 +901,25 @@ private fun formatHistoryWindowLabel(
     val end = Instant.ofEpochMilli(windowEndEpochMillis).atZone(zoneId)
     val start = end.minus(preset.duration)
     return if (preset.isLongSpan) {
-        val formatter = DateTimeFormatter.ofPattern("d MMM")
-        "${formatter.format(start)} - ${formatter.format(end)}"
+        "${formatHistoryDateLabel(start.toLocalDate())} - ${formatHistoryDateLabel(end.toLocalDate())}"
     } else {
         val formatter = DateTimeFormatter.ofPattern("H:mm")
-        val startDay = DateTimeFormatter.ofPattern("d MMM").format(start)
-        val endDay = DateTimeFormatter.ofPattern("d MMM").format(end)
-        if (start.toLocalDate() == end.toLocalDate()) {
+        val today = java.time.LocalDate.now(zoneId)
+        if (start.toLocalDate() == end.toLocalDate() && end.toLocalDate() == today) {
             "${formatter.format(start)} - ${formatter.format(end)}"
+        } else if (start.toLocalDate() == end.toLocalDate()) {
+            "${formatHistoryDateLabel(end.toLocalDate())} ${formatter.format(start)} - ${formatter.format(end)}"
         } else {
-            "$startDay ${formatter.format(start)} - $endDay ${formatter.format(end)}"
+            "${formatHistoryDateLabel(start.toLocalDate())} ${formatter.format(start)} - " +
+                "${formatHistoryDateLabel(end.toLocalDate())} ${formatter.format(end)}"
         }
     }
+}
+
+private fun formatHistoryDateLabel(date: LocalDate): String {
+    val weekday = date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault())
+    val holidayMarker = if (NswCalendarUtils.isNswPublicHoliday(date)) "*" else ""
+    return "${DateTimeFormatter.ofPattern("d MMM").format(date)} ($weekday$holidayMarker)"
 }
 
 private fun HistoryPoint.toMorningUnavailablePoint(

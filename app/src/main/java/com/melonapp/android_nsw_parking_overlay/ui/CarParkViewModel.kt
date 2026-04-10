@@ -95,6 +95,7 @@ class CarParkViewModel(
     private val gson = Gson()
     private var historyJob: Job? = null
     private var historyBoundsJob: Job? = null
+    private var historyShiftJob: Job? = null
 
     init {
         observeDataStore()
@@ -280,14 +281,28 @@ class CarParkViewModel(
         val spanMillis = state.historyTimespanPreset.duration.toMillis()
         val minAllowedEnd = minOf(minEpoch + spanMillis, maxEpoch)
         val maxAllowedEnd = maxOf(minAllowedEnd, maxEpoch)
-        val shiftedEnd = (state.historyWindowEndEpochMillis + (spanMillis * direction))
-            .coerceIn(minAllowedEnd, maxAllowedEnd)
-        _uiState.update { it.copy(historyWindowEndEpochMillis = shiftedEnd) }
-        observeHistorySeries(
-            selectedCarParks = state.selectedCarParks,
-            preset = state.historyTimespanPreset,
-            windowEndEpochMillis = shiftedEnd
-        )
+        historyShiftJob?.cancel()
+        historyShiftJob = viewModelScope.launch {
+            var candidateEnd = state.historyWindowEndEpochMillis + (spanMillis * direction)
+            while (candidateEnd in minAllowedEnd..maxAllowedEnd) {
+                val fromEpoch = candidateEnd - spanMillis
+                val count = repository.countHistoryInRange(
+                    carParkIds = state.selectedCarParks.map { it.id },
+                    fromEpochMillis = fromEpoch,
+                    toEpochMillis = candidateEnd
+                )
+                if (count > 0) {
+                    _uiState.update { it.copy(historyWindowEndEpochMillis = candidateEnd) }
+                    observeHistorySeries(
+                        selectedCarParks = state.selectedCarParks,
+                        preset = state.historyTimespanPreset,
+                        windowEndEpochMillis = candidateEnd
+                    )
+                    return@launch
+                }
+                candidateEnd += spanMillis * direction
+            }
+        }
     }
 
     fun setApiKey(key: String) {
