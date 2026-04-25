@@ -3,6 +3,7 @@ package com.melonapp.android_nsw_parking_overlay.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -27,6 +28,9 @@ class DataStoreManager(private val context: Context) {
         val OVERLAY_COLOR_RED = intPreferencesKey("overlay_color_red")
         val OVERLAY_COLOR_ORANGE = intPreferencesKey("overlay_color_orange")
         val OVERLAY_COLOR_GREEN = intPreferencesKey("overlay_color_green")
+
+        val SILENT_QUERY_MODE = booleanPreferencesKey("silent_query_mode")
+        val SILENT_QUERY_INTERVAL_MS = longPreferencesKey("silent_query_interval_ms")
     }
 
     val apiKey: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -39,6 +43,14 @@ class DataStoreManager(private val context: Context) {
 
     val overlayRefreshIntervalMs: Flow<Long> = context.dataStore.data.map { preferences ->
         preferences[OVERLAY_REFRESH_INTERVAL_MS] ?: 30_000L
+    }
+
+    val silentQueryMode: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[SILENT_QUERY_MODE] ?: false
+    }
+
+    val silentQueryIntervalMs: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[SILENT_QUERY_INTERVAL_MS] ?: 120_000L
     }
 
     val overlayThresholdLow: Flow<Int> = context.dataStore.data.map { preferences ->
@@ -91,6 +103,18 @@ class DataStoreManager(private val context: Context) {
             preferences[OVERLAY_COLOR_RED] = red
             preferences[OVERLAY_COLOR_ORANGE] = orange
             preferences[OVERLAY_COLOR_GREEN] = green
+        }
+    }
+
+    suspend fun saveSilentQueryMode(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[SILENT_QUERY_MODE] = enabled
+        }
+    }
+
+    suspend fun saveSilentQueryIntervalMs(value: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[SILENT_QUERY_INTERVAL_MS] = value
         }
     }
 }

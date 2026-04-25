@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
@@ -310,6 +311,55 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: CarParkUiState) {
 
                 OutlinedButton(onClick = { OverlayService.stop(context) }) {
                     Text("Stop")
+                }
+            }
+        }
+
+        item {
+            Text("Silent Query Mode", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Shows only a small red dot in the top-left corner. Keeps API fetching active for history data.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Enable silent mode")
+                Switch(
+                    checked = uiState.silentQueryMode,
+                    onCheckedChange = { viewModel.setSilentMode(it) }
+                )
+            }
+
+            if (uiState.silentQueryMode) {
+                Text(
+                    "Silent refresh interval",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                var silentIntervalSecInput by remember(uiState.silentQueryIntervalMs) {
+                    mutableStateOf((uiState.silentQueryIntervalMs / 1000L).toString())
+                }
+                OutlinedTextField(
+                    value = silentIntervalSecInput,
+                    onValueChange = { silentIntervalSecInput = it.filter(Char::isDigit) },
+                    label = { Text("Seconds (30 - 1200)") },
+                    singleLine = true,
+                    modifier = Modifier.widthIn(max = 220.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+                Button(
+                    onClick = {
+                        val sec = silentIntervalSecInput.toLongOrNull() ?: 120L
+                        viewModel.setSilentQueryIntervalMs(sec.coerceIn(30L, 1200L) * 1000L)
+                    },
+                    modifier = Modifier.padding(top = 6.dp)
+                ) {
+                    Text("Save silent interval")
                 }
             }
         }

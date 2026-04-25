@@ -17,8 +17,10 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.animation.Animation
+import android.view.animation.AnimationUtils
 import android.view.animation.LinearInterpolator
 import android.view.animation.RotateAnimation
+import android.view.View
 import android.widget.ProgressBar
 import android.widget.ImageButton
 import android.widget.TextView
@@ -44,7 +46,8 @@ import kotlinx.coroutines.withContext
 class OverlayService : Service() {
 
     private lateinit var windowManager: WindowManager
-    private var overlayView: android.view.View? = null
+    private var overlayView: View? = null
+    private var isSilentMode: Boolean = false
     private lateinit var params: WindowManager.LayoutParams
 
     private val serviceJob = Job()
@@ -125,7 +128,25 @@ class OverlayService : Service() {
         startForegroundServiceNotification()
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        overlayView = LayoutInflater.from(this).inflate(R.layout.overlay_layout, null)
+        
+        serviceScope.launch {
+            isSilentMode = dataStoreManager.silentQueryMode.first()
+            setupOverlay()
+            updateLoop()
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupOverlay() {
+        // Remove existing view if any
+        overlayView?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (_: Exception) {}
+        }
+
+        val layoutRes = if (isSilentMode) R.layout.silent_overlay_layout else R.layout.overlay_layout
+        overlayView = LayoutInflater.from(this).inflate(layoutRes, null)
 
         params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -146,14 +167,20 @@ class OverlayService : Service() {
 
         windowManager.addView(overlayView, params)
 
-        overlayView?.findViewById<ImageButton>(R.id.overlay_refresh)?.setOnClickListener {
-            serviceScope.launch {
-                if (isManualRefreshInFlight) return@launch
-                isManualRefreshInFlight = true
-                try {
-                    updateOnce(showLoading = true, animateRefresh = true)
-                } finally {
-                    isManualRefreshInFlight = false
+        if (isSilentMode) {
+            val dot = overlayView?.findViewById<View>(R.id.silent_dot)
+            val flashAnim = AnimationUtils.loadAnimation(this, R.anim.slow_flash)
+            dot?.startAnimation(flashAnim)
+        } else {
+            overlayView?.findViewById<ImageButton>(R.id.overlay_refresh)?.setOnClickListener {
+                serviceScope.launch {
+                    if (isManualRefreshInFlight) return@launch
+                    isManualRefreshInFlight = true
+                    try {
+                        updateOnce(showLoading = true, animateRefresh = true)
+                    } finally {
+                        isManualRefreshInFlight = false
+                    }
                 }
             }
         }
@@ -177,19 +204,29 @@ class OverlayService : Service() {
                 else -> false
             }
         }
-
-        // Start updating with app's data layer.
-        serviceScope.launch {
-            updateLoop()
-        }
     }
 
     private suspend fun updateLoop() {
         while (serviceScope.isActive) {
+            // Check if silent mode changed
+            val currentSilentMode = dataStoreManager.silentQueryMode.first()
+            if (currentSilentMode != isSilentMode) {
+                isSilentMode = currentSilentMode
+                withContext(Dispatchers.Main) {
+                    setupOverlay()
+                }
+            }
+
             updateOnce(showLoading = false, animateRefresh = false)
-            val interval = runCatching { dataStoreManager.overlayRefreshIntervalMs.first() }
-                .getOrDefault(DEFAULT_REFRESH_INTERVAL_MS)
-                .coerceIn(5_000L, 10 * 60_000L)
+            
+            val interval = if (isSilentMode) {
+                runCatching { dataStoreManager.silentQueryIntervalMs.first() }
+                    .getOrDefault(120_000L)
+            } else {
+                runCatching { dataStoreManager.overlayRefreshIntervalMs.first() }
+                    .getOrDefault(DEFAULT_REFRESH_INTERVAL_MS)
+            }.coerceIn(5_000L, 10 * 60_000L)
+            
             delay(interval)
         }
     }
@@ -234,6 +271,7 @@ class OverlayService : Service() {
 
     private suspend fun render(state: OverlayDisplayState) {
         val root = overlayView ?: return
+        if (isSilentMode) return // No rendering needed for silent mode dot
 
         val line1 = root.findViewById<TextView>(R.id.overlay_line1)
         val line2 = root.findViewById<TextView>(R.id.overlay_line2)
@@ -275,6 +313,8 @@ class OverlayService : Service() {
 
     private suspend fun applyColors(state: OverlayDisplayState) {
         val root = overlayView ?: return
+        if (isSilentMode) return // No colors to apply for silent mode dot
+
         val line1 = root.findViewById<TextView>(R.id.overlay_line1)
         val line2 = root.findViewById<TextView>(R.id.overlay_line2)
         val line3 = root.findViewById<TextView>(R.id.overlay_line3)
@@ -310,6 +350,8 @@ class OverlayService : Service() {
 
     private fun setLoading(isLoading: Boolean, animateRefresh: Boolean) {
         val root = overlayView ?: return
+        if (isSilentMode) return // No loading indicator for silent mode dot
+
         val loading = root.findViewById<ProgressBar>(R.id.overlay_loading)
         val refreshBtn = root.findViewById<ImageButton>(R.id.overlay_refresh)
 

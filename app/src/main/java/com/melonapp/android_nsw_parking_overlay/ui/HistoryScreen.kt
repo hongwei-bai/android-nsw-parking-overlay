@@ -775,7 +775,8 @@ private fun rememberVisibleLongRange(
     val visibleSpan = (baseSpan / effectiveZoom).toLong().coerceIn(1L, baseSpan)
     val maxOffset = (baseSpan - visibleSpan).coerceAtLeast(0L)
     val offset = (maxOffset * pan.coerceIn(0f, 1f).toDouble()).toLong()
-    val start = (baseStart + offset).coerceIn(baseStart, (baseEnd - visibleSpan).coerceAtLeast(baseStart))
+    val rangeMax = (baseEnd - visibleSpan).coerceAtLeast(baseStart)
+    val start = (baseStart + offset).coerceIn(baseStart, rangeMax)
     return VisibleLongRange(
         start = start,
         end = start + visibleSpan,

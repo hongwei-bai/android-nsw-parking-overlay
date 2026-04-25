@@ -80,7 +80,10 @@ data class CarParkUiState(
     val overlayThresholdMid: Int = 30,
     val overlayColorRedArgb: Int = 0xFFFF3B30.toInt(),
     val overlayColorOrangeArgb: Int = 0xFFFF9500.toInt(),
-    val overlayColorGreenArgb: Int = 0xFF34C759.toInt()
+    val overlayColorGreenArgb: Int = 0xFF34C759.toInt(),
+
+    val silentQueryMode: Boolean = false,
+    val silentQueryIntervalMs: Long = 120_000L
 )
 
 class CarParkViewModel(
@@ -172,6 +175,16 @@ class CarParkViewModel(
         viewModelScope.launch {
             dataStoreManager.overlayColorGreen.collectLatest { value ->
                 _uiState.update { it.copy(overlayColorGreenArgb = value) }
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.silentQueryMode.collectLatest { value ->
+                _uiState.update { it.copy(silentQueryMode = value) }
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.silentQueryIntervalMs.collectLatest { value ->
+                _uiState.update { it.copy(silentQueryIntervalMs = value) }
             }
         }
     }
@@ -331,6 +344,18 @@ class CarParkViewModel(
 
     fun setOverlayPermission(hasPermission: Boolean) {
         _uiState.update { it.copy(hasOverlayPermission = hasPermission) }
+    }
+
+    fun setSilentMode(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStoreManager.saveSilentQueryMode(enabled)
+        }
+    }
+
+    fun setSilentQueryIntervalMs(value: Long) {
+        viewModelScope.launch {
+            dataStoreManager.saveSilentQueryIntervalMs(value)
+        }
     }
 
     fun fetchFacilities() {
