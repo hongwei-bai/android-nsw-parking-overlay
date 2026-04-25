@@ -526,7 +526,7 @@ private fun LongSpanHistoryChart(
             chartWidth = chartWidth,
             chartHeight = chartHeight,
             yLabelProvider = { fraction ->
-                formatMinutesOfDay((yRange.endInclusive - yRange.span * fraction).roundToInt())
+                formatMinutesOfDay((yRange.start + yRange.span * fraction).roundToInt())
             },
             xLabelProvider = { fraction ->
                 val epoch = visibleXRange.start + (visibleXRange.span * fraction).toLong()
@@ -553,6 +553,7 @@ private fun LongSpanHistoryChart(
                 xRangeSpan = visibleXRange.span,
                 yRangeStart = yRange.start,
                 yRangeSpan = yRange.span,
+                invertY = true,
                 xValueProvider = { it.epochMillis },
                 yValueProvider = { it.minutesOfDay.toFloat() },
                 pointLabelProvider = { point ->
@@ -694,6 +695,7 @@ private fun <T> androidx.compose.ui.graphics.drawscope.DrawScope.drawHistoryLine
     xRangeSpan: Long,
     yRangeStart: Float,
     yRangeSpan: Float,
+    invertY: Boolean = false,
     xValueProvider: (T) -> Long = { (it as HistoryPoint).epochMillis },
     yValueProvider: (T) -> Float = { (it as HistoryPoint).spacesLeft.toFloat() },
     pointLabelProvider: (T) -> String
@@ -709,9 +711,10 @@ private fun <T> androidx.compose.ui.graphics.drawscope.DrawScope.drawHistoryLine
 
     val path = Path()
     points.forEachIndexed { index, point ->
+        val yFraction = (yValueProvider(point) - yRangeStart) / yRangeSpan
         val offset = Offset(
             x = leftPadding + ((xValueProvider(point) - xRangeStart).toFloat() / xRangeSpan) * chartWidth,
-            y = topPadding + (1f - ((yValueProvider(point) - yRangeStart) / yRangeSpan)) * chartHeight
+            y = topPadding + (if (invertY) yFraction else 1f - yFraction) * chartHeight
         )
         if (index == 0) {
             path.moveTo(offset.x, offset.y)
@@ -728,9 +731,10 @@ private fun <T> androidx.compose.ui.graphics.drawscope.DrawScope.drawHistoryLine
 
     val labelStep = ceil(points.size / 12f).toInt().coerceAtLeast(1)
     points.forEachIndexed { index, point ->
+        val yFraction = (yValueProvider(point) - yRangeStart) / yRangeSpan
         val offset = Offset(
             x = leftPadding + ((xValueProvider(point) - xRangeStart).toFloat() / xRangeSpan) * chartWidth,
-            y = topPadding + (1f - ((yValueProvider(point) - yRangeStart) / yRangeSpan)) * chartHeight
+            y = topPadding + (if (invertY) yFraction else 1f - yFraction) * chartHeight
         )
         drawCircle(
             color = color,
@@ -767,11 +771,11 @@ private fun rememberVisibleLongRange(
     pan: Float
 ): VisibleLongRange {
     val baseSpan = (baseEnd - baseStart).coerceAtLeast(1L)
-    val effectiveZoom = zoom.coerceAtLeast(1f)
-    val visibleSpan = (baseSpan / effectiveZoom).toLong().coerceAtLeast(1L)
+    val effectiveZoom = zoom.coerceAtLeast(1f).toDouble()
+    val visibleSpan = (baseSpan / effectiveZoom).toLong().coerceIn(1L, baseSpan)
     val maxOffset = (baseSpan - visibleSpan).coerceAtLeast(0L)
-    val offset = (maxOffset * pan.coerceIn(0f, 1f)).toLong()
-    val start = (baseStart + offset).coerceIn(baseStart, baseEnd - visibleSpan)
+    val offset = (maxOffset * pan.coerceIn(0f, 1f).toDouble()).toLong()
+    val start = (baseStart + offset).coerceIn(baseStart, (baseEnd - visibleSpan).coerceAtLeast(baseStart))
     return VisibleLongRange(
         start = start,
         end = start + visibleSpan,
