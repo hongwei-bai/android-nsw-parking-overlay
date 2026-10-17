@@ -10,17 +10,22 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
+import kotlin.math.hypot
 import android.view.animation.Animation
 import android.view.animation.AnimationUtils
 import android.view.animation.LinearInterpolator
 import android.view.animation.RotateAnimation
-import android.view.View
 import android.widget.ProgressBar
 import android.widget.ImageButton
 import android.widget.TextView
@@ -53,11 +58,26 @@ class OverlayService : Service() {
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + serviceJob)
 
-    // Variables for dragging
+    // Variables for dragging and long press
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var isLongPressTriggered = false
+    private val longPressRunnable = Runnable {
+        isLongPressTriggered = true
+        overlayView?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        openMainActivity()
+    }
+
+    private fun openMainActivity() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        startActivity(intent)
+    }
 
     private val gson = Gson()
     private val repository by lazy {
@@ -185,7 +205,11 @@ class OverlayService : Service() {
             }
         }
 
-        // Enable dragging
+        mainHandler.removeCallbacks(longPressRunnable)
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+
+        // Enable dragging and long-press to open app (single tap does nothing)
         overlayView?.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -193,12 +217,25 @@ class OverlayService : Service() {
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
+                    isLongPressTriggered = false
+                    mainHandler.postDelayed(longPressRunnable, longPressTimeout)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager.updateViewLayout(overlayView, params)
+                    val dx = event.rawX - initialTouchX
+                    val dy = event.rawY - initialTouchY
+                    if (hypot(dx.toDouble(), dy.toDouble()) > touchSlop) {
+                        mainHandler.removeCallbacks(longPressRunnable)
+                    }
+                    if (!isLongPressTriggered) {
+                        params.x = initialX + dx.toInt()
+                        params.y = initialY + dy.toInt()
+                        windowManager.updateViewLayout(overlayView, params)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    mainHandler.removeCallbacks(longPressRunnable)
                     true
                 }
                 else -> false
@@ -411,6 +448,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mainHandler.removeCallbacksAndMessages(null)
         serviceJob.cancel()
         overlayView?.let {
             try {
