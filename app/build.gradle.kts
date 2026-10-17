@@ -72,6 +72,10 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
 
+    // Android Auto (Car App Library)
+    implementation(libs.androidx.car.app)
+    implementation(libs.androidx.car.app.projected)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
