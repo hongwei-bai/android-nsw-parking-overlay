@@ -448,6 +448,151 @@ fun HomeScreen(viewModel: CarParkViewModel, uiState: CarParkUiState) {
         }
 
         item {
+            Text("Android Auto Parking Alerts", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "When Android Auto is active, send high-priority notifications to your car screen when parking spaces drop.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Enable alerts when Android Auto is on")
+                Switch(
+                    checked = uiState.autoNotifEnabled,
+                    onCheckedChange = { viewModel.setAutoNotifEnabled(it) }
+                )
+            }
+
+            if (uiState.autoNotifEnabled) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Drop Alert Rules (Notification Numbers Logic)",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+
+                        var tierHighInput by remember(uiState.autoNotifTierHigh) {
+                            mutableStateOf(uiState.autoNotifTierHigh.toString())
+                        }
+                        var stepHighInput by remember(uiState.autoNotifStepHigh) {
+                            mutableStateOf(uiState.autoNotifStepHigh.toString())
+                        }
+                        var tierMidInput by remember(uiState.autoNotifTierMid) {
+                            mutableStateOf(uiState.autoNotifTierMid.toString())
+                        }
+                        var stepMidInput by remember(uiState.autoNotifStepMid) {
+                            mutableStateOf(uiState.autoNotifStepMid.toString())
+                        }
+                        var stepLowInput by remember(uiState.autoNotifStepLow) {
+                            mutableStateOf(uiState.autoNotifStepLow.toString())
+                        }
+
+                        // Upper Tier (> 20: notify every -5)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = tierHighInput,
+                                onValueChange = { tierHighInput = it.filter(Char::isDigit) },
+                                label = { Text("When space >") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            OutlinedTextField(
+                                value = stepHighInput,
+                                onValueChange = { stepHighInput = it.filter(Char::isDigit) },
+                                label = { Text("Notify every -N") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                        }
+
+                        // Middle Tier (> 10: notify every -2)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = tierMidInput,
+                                onValueChange = { tierMidInput = it.filter(Char::isDigit) },
+                                label = { Text("When space >") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            OutlinedTextField(
+                                value = stepMidInput,
+                                onValueChange = { stepMidInput = it.filter(Char::isDigit) },
+                                label = { Text("Notify every -N") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                        }
+
+                        // Low Tier (0 to tierMid: notify every -1)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Critical (<= $tierMidInput):",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            OutlinedTextField(
+                                value = stepLowInput,
+                                onValueChange = { stepLowInput = it.filter(Char::isDigit) },
+                                label = { Text("Notify every -N") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                val th = tierHighInput.toIntOrNull() ?: 20
+                                val sh = (stepHighInput.toIntOrNull() ?: 5).coerceAtLeast(1)
+                                val tm = tierMidInput.toIntOrNull() ?: 10
+                                val sm = (stepMidInput.toIntOrNull() ?: 2).coerceAtLeast(1)
+                                val sl = (stepLowInput.toIntOrNull() ?: 1).coerceAtLeast(1)
+                                viewModel.setAutoNotifConfig(
+                                    tierHigh = th,
+                                    stepHigh = sh,
+                                    tierMid = tm,
+                                    stepMid = sm,
+                                    stepLow = sl
+                                )
+                            },
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Text("Save Alert Rules")
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
             Text("Car Park Selection", style = MaterialTheme.typography.headlineSmall)
             Button(
                 onClick = { viewModel.fetchFacilities() },

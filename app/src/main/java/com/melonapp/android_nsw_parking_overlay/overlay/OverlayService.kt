@@ -39,6 +39,11 @@ import com.melonapp.android_nsw_parking_overlay.data.api.RetrofitClient
 import com.melonapp.android_nsw_parking_overlay.data.database.AppDatabase
 import com.melonapp.android_nsw_parking_overlay.data.repository.CarParkRepository
 import com.melonapp.android_nsw_parking_overlay.ui.SelectedCarPark
+import androidx.car.app.connection.CarConnection
+import androidx.car.app.notification.CarAppExtender
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Observer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -91,9 +96,23 @@ class OverlayService : Service() {
     private var lastGood: List<SelectedCarPark> = emptyList()
     private var isManualRefreshInFlight: Boolean = false
 
+    private var isAndroidAutoConnected: Boolean = false
+    private var carConnection: CarConnection? = null
+    private val carConnectionObserver = Observer<Int> { connectionType ->
+        val wasConnected = isAndroidAutoConnected
+        isAndroidAutoConnected = (connectionType == CarConnection.CONNECTION_TYPE_PROJECTION)
+        if (!isAndroidAutoConnected && wasConnected) {
+            lastNotifiedSpotsMap.clear()
+        }
+    }
+
+    // Tracks baseline spots count for each carpark: carParkId -> lastNotifiedSpots
+    private val lastNotifiedSpotsMap = mutableMapOf<String, Int>()
+
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "overlay_service_channel"
         const val NOTIFICATION_ID = 12345
+        const val AA_ALERT_CHANNEL_ID = "aa_parking_alert_channel"
 
         const val ACTION_START = "com.melonapp.android_nsw_parking_overlay.overlay.action.START"
         const val ACTION_STOP = "com.melonapp.android_nsw_parking_overlay.overlay.action.STOP"
@@ -146,6 +165,11 @@ class OverlayService : Service() {
         }
 
         startForegroundServiceNotification()
+        createAlertNotificationChannel()
+
+        carConnection = CarConnection(applicationContext).apply {
+            type.observeForever(carConnectionObserver)
+        }
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         
@@ -296,6 +320,7 @@ class OverlayService : Service() {
                         carPark.copy(availableSpots = details?.availableSpots ?: 0)
                     }
                 }
+                checkAndSendAutoNotifications(updated)
                 OverlayDisplayState.Data(updated.take(3))
             }
         } catch (_: Exception) {
@@ -448,6 +473,8 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        carConnection?.type?.removeObserver(carConnectionObserver)
+        lastNotifiedSpotsMap.clear()
         mainHandler.removeCallbacksAndMessages(null)
         serviceJob.cancel()
         overlayView?.let {
@@ -458,6 +485,120 @@ class OverlayService : Service() {
             }
         }
         overlayView = null
+    }
+
+    private fun createAlertNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                AA_ALERT_CHANNEL_ID,
+                "Android Auto Parking Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "High-priority parking occupancy change notifications for Android Auto"
+                enableVibration(true)
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
+    }
+
+    private suspend fun checkAndSendAutoNotifications(carParks: List<SelectedCarPark>) {
+        if (!isAndroidAutoConnected) {
+            if (lastNotifiedSpotsMap.isNotEmpty()) {
+                lastNotifiedSpotsMap.clear()
+            }
+            return
+        }
+
+        val isEnabled = dataStoreManager.autoNotifEnabled.first()
+        if (!isEnabled) return
+
+        val tierHigh = dataStoreManager.autoNotifTierHigh.first()
+        val stepHigh = dataStoreManager.autoNotifStepHigh.first().coerceAtLeast(1)
+        val tierMid = dataStoreManager.autoNotifTierMid.first()
+        val stepMid = dataStoreManager.autoNotifStepMid.first().coerceAtLeast(1)
+        val stepLow = dataStoreManager.autoNotifStepLow.first().coerceAtLeast(1)
+
+        for (carPark in carParks) {
+            val currentSpots = carPark.availableSpots
+            val prevSpots = lastNotifiedSpotsMap[carPark.id]
+
+            if (prevSpots == null) {
+                // Baseline initialization
+                lastNotifiedSpotsMap[carPark.id] = currentSpots
+                continue
+            }
+
+            if (currentSpots > prevSpots) {
+                // Spots increased; update baseline
+                lastNotifiedSpotsMap[carPark.id] = currentSpots
+            } else if (currentSpots < prevSpots) {
+                val drop = prevSpots - currentSpots
+                val requiredStep = when {
+                    currentSpots > tierHigh -> stepHigh
+                    currentSpots > tierMid -> stepMid
+                    else -> stepLow
+                }
+
+                if (drop >= requiredStep) {
+                    sendAutoNotification(carPark, currentSpots, drop, prevSpots)
+                    lastNotifiedSpotsMap[carPark.id] = currentSpots
+                }
+            }
+        }
+    }
+
+    private fun sendAutoNotification(
+        carPark: SelectedCarPark,
+        currentSpots: Int,
+        drop: Int,
+        prevSpots: Int
+    ) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            carPark.id.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val carExtender = CarAppExtender.Builder()
+            .setImportance(NotificationManager.IMPORTANCE_HIGH)
+            .build()
+
+        val title = if (currentSpots == 0) {
+            "FULL: ${carPark.name}"
+        } else {
+            "${carPark.name}: $currentSpots spots left"
+        }
+
+        val text = if (currentSpots == 0) {
+            "Car park is now completely full (dropped by $drop)."
+        } else {
+            "Dropped by $drop spots ($prevSpots → $currentSpots)."
+        }
+
+        val notification = NotificationCompat.Builder(this, AA_ALERT_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .extend(carExtender)
+            .build()
+
+        val notificationId = 20000 + (carPark.id.hashCode() and 0x7FFF)
+        val manager = NotificationManagerCompat.from(this)
+        try {
+            manager.notify(notificationId, notification)
+        } catch (_: SecurityException) {
+            // Notification permission might not be granted
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -83,7 +83,14 @@ data class CarParkUiState(
     val overlayColorGreenArgb: Int = 0xFF34C759.toInt(),
 
     val silentQueryMode: Boolean = false,
-    val silentQueryIntervalMs: Long = 120_000L
+    val silentQueryIntervalMs: Long = 120_000L,
+
+    val autoNotifEnabled: Boolean = true,
+    val autoNotifTierHigh: Int = 20,
+    val autoNotifStepHigh: Int = 5,
+    val autoNotifTierMid: Int = 10,
+    val autoNotifStepMid: Int = 2,
+    val autoNotifStepLow: Int = 1
 )
 
 class CarParkViewModel(
@@ -185,6 +192,36 @@ class CarParkViewModel(
         viewModelScope.launch {
             dataStoreManager.silentQueryIntervalMs.collectLatest { value ->
                 _uiState.update { it.copy(silentQueryIntervalMs = value) }
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.autoNotifEnabled.collectLatest { value ->
+                _uiState.update { it.copy(autoNotifEnabled = value) }
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.autoNotifTierHigh.collectLatest { value ->
+                _uiState.update { it.copy(autoNotifTierHigh = value) }
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.autoNotifStepHigh.collectLatest { value ->
+                _uiState.update { it.copy(autoNotifStepHigh = value) }
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.autoNotifTierMid.collectLatest { value ->
+                _uiState.update { it.copy(autoNotifTierMid = value) }
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.autoNotifStepMid.collectLatest { value ->
+                _uiState.update { it.copy(autoNotifStepMid = value) }
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.autoNotifStepLow.collectLatest { value ->
+                _uiState.update { it.copy(autoNotifStepLow = value) }
             }
         }
     }
@@ -483,6 +520,30 @@ class CarParkViewModel(
                     historyStatusMessage = message
                 )
             }
+        }
+    }
+
+    fun setAutoNotifEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            dataStoreManager.saveAutoNotifEnabled(enabled)
+        }
+    }
+
+    fun setAutoNotifConfig(
+        tierHigh: Int,
+        stepHigh: Int,
+        tierMid: Int,
+        stepMid: Int,
+        stepLow: Int
+    ) {
+        viewModelScope.launch {
+            dataStoreManager.saveAutoNotifConfig(
+                tierHigh = tierHigh,
+                stepHigh = stepHigh,
+                tierMid = tierMid,
+                stepMid = stepMid,
+                stepLow = stepLow
+            )
         }
     }
 

@@ -31,6 +31,13 @@ class DataStoreManager(private val context: Context) {
 
         val SILENT_QUERY_MODE = booleanPreferencesKey("silent_query_mode")
         val SILENT_QUERY_INTERVAL_MS = longPreferencesKey("silent_query_interval_ms")
+
+        val AUTO_NOTIF_ENABLED = booleanPreferencesKey("auto_notif_enabled")
+        val AUTO_NOTIF_TIER_HIGH = intPreferencesKey("auto_notif_tier_high")
+        val AUTO_NOTIF_STEP_HIGH = intPreferencesKey("auto_notif_step_high")
+        val AUTO_NOTIF_TIER_MID = intPreferencesKey("auto_notif_tier_mid")
+        val AUTO_NOTIF_STEP_MID = intPreferencesKey("auto_notif_step_mid")
+        val AUTO_NOTIF_STEP_LOW = intPreferencesKey("auto_notif_step_low")
     }
 
     val apiKey: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -71,6 +78,30 @@ class DataStoreManager(private val context: Context) {
 
     val overlayColorGreen: Flow<Int> = context.dataStore.data.map { preferences ->
         preferences[OVERLAY_COLOR_GREEN] ?: 0xFF34C759.toInt()
+    }
+
+    val autoNotifEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[AUTO_NOTIF_ENABLED] ?: true
+    }
+
+    val autoNotifTierHigh: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[AUTO_NOTIF_TIER_HIGH] ?: 20
+    }
+
+    val autoNotifStepHigh: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[AUTO_NOTIF_STEP_HIGH] ?: 5
+    }
+
+    val autoNotifTierMid: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[AUTO_NOTIF_TIER_MID] ?: 10
+    }
+
+    val autoNotifStepMid: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[AUTO_NOTIF_STEP_MID] ?: 2
+    }
+
+    val autoNotifStepLow: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[AUTO_NOTIF_STEP_LOW] ?: 1
     }
 
     suspend fun saveApiKey(key: String) {
@@ -115,6 +146,28 @@ class DataStoreManager(private val context: Context) {
     suspend fun saveSilentQueryIntervalMs(value: Long) {
         context.dataStore.edit { preferences ->
             preferences[SILENT_QUERY_INTERVAL_MS] = value
+        }
+    }
+
+    suspend fun saveAutoNotifEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[AUTO_NOTIF_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveAutoNotifConfig(
+        tierHigh: Int,
+        stepHigh: Int,
+        tierMid: Int,
+        stepMid: Int,
+        stepLow: Int
+    ) {
+        context.dataStore.edit { preferences ->
+            preferences[AUTO_NOTIF_TIER_HIGH] = tierHigh
+            preferences[AUTO_NOTIF_STEP_HIGH] = stepHigh
+            preferences[AUTO_NOTIF_TIER_MID] = tierMid
+            preferences[AUTO_NOTIF_STEP_MID] = stepMid
+            preferences[AUTO_NOTIF_STEP_LOW] = stepLow
         }
     }
 }

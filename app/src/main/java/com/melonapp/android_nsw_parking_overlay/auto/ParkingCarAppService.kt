@@ -5,6 +5,8 @@ import androidx.car.app.CarAppService
 import androidx.car.app.Session
 import androidx.car.app.validation.HostValidator
 
+import com.melonapp.android_nsw_parking_overlay.overlay.OverlayService
+
 class ParkingCarAppService : CarAppService() {
 
     override fun createHostValidator(): HostValidator {
@@ -18,6 +20,9 @@ class ParkingCarAppService : CarAppService() {
     }
 
     override fun onCreateSession(): Session {
+        if (OverlayService.isOverlayPermissionGranted(this)) {
+            OverlayService.start(this)
+        }
         return ParkingSession()
     }
 }
